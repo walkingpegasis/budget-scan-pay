@@ -5,13 +5,33 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Camera, Upload, X, Check, CreditCard, Smartphone } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
+interface ScannedItem {
+  name: string;
+  price: number;
+}
+
+interface ScannedReceipt {
+  merchant: string;
+  amount: number;
+  items: ScannedItem[];
+  date: string;
+  category: string;
+}
+
+interface ExpenseAdded {
+  amount: number;
+  category: string;
+  description: string;
+  date: string;
+}
+
 interface ScanPayFeatureProps {
-  onExpenseAdded?: (expense: any) => void;
+  onExpenseAdded?: (expense: ExpenseAdded) => void;
 }
 
 export const ScanPayFeature = ({ onExpenseAdded }: ScanPayFeatureProps) => {
   const [isScanning, setIsScanning] = useState(false);
-  const [scannedData, setScannedData] = useState<any>(null);
+  const [scannedData, setScannedData] = useState<ScannedReceipt | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -20,7 +40,7 @@ export const ScanPayFeature = ({ onExpenseAdded }: ScanPayFeatureProps) => {
     
     // Simulate processing time
     setTimeout(() => {
-      const mockReceiptData = {
+      const mockReceiptData: ScannedReceipt = {
         merchant: "Coffee Bean Cafe",
         amount: 15.47,
         items: [
@@ -172,7 +192,7 @@ export const ScanPayFeature = ({ onExpenseAdded }: ScanPayFeatureProps) => {
                 <p className="text-muted-foreground">{scannedData.date}</p>
                 
                 <div className="mt-3 space-y-1">
-                  {scannedData.items.map((item: any, index: number) => (
+                  {scannedData.items.map((item: ScannedItem, index: number) => (
                     <div key={index} className="flex justify-between text-sm">
                       <span>{item.name}</span>
                       <span>${item.price.toFixed(2)}</span>
