@@ -2,8 +2,12 @@ import { useState, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Camera, Upload, X, Check, CreditCard, Smartphone } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Camera, Upload, X, Check } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 interface ScanPayFeatureProps {
   onExpenseAdded?: (expense: any) => void;
@@ -12,8 +16,11 @@ interface ScanPayFeatureProps {
 export const ScanPayFeature = ({ onExpenseAdded }: ScanPayFeatureProps) => {
   const [isScanning, setIsScanning] = useState(false);
   const [scannedData, setScannedData] = useState<any>(null);
-  const [showPayment, setShowPayment] = useState(false);
+  const [category, setCategory] = useState<string>("");
+  const [amount, setAmount] = useState<string>("");
+  const [description, setDescription] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { email } = useAuth();
 
   const simulateReceiptScan = () => {
     setIsScanning(true);
@@ -41,27 +48,66 @@ export const ScanPayFeature = ({ onExpenseAdded }: ScanPayFeatureProps) => {
     }, 2000);
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      simulateReceiptScan();
+    if (!file) return;
+    if (!email) {
+      toast({ title: "Login required", description: "Please sign in to upload bills", variant: "destructive" });
+      return;
+    }
+    try {
+      setIsScanning(true);
+      const form = new FormData();
+      form.append("bill", file);
+      form.append("email", email);
+      const res = await fetch("/api/bills/upload", { method: "POST", body: form });
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json();
+      setScannedData(data);
+      setAmount(String(data.amount || ""));
+      setCategory(String(data.suggested_category || ""));
+      setDescription(data.merchant ? `${data.merchant} - Bill` : "Bill");
+      toast({ title: "Bill uploaded", description: "Review and categorize your expense" });
+    } catch (e: any) {
+      toast({ title: "Upload error", description: String(e.message || e), variant: "destructive" });
+    } finally {
+      setIsScanning(false);
     }
   };
 
-  const confirmExpense = () => {
-    if (scannedData && onExpenseAdded) {
-      onExpenseAdded({
-        amount: scannedData.amount,
-        category: scannedData.category,
-        description: `${scannedData.merchant} - Receipt`,
-        date: scannedData.date
-      });
+  const confirmExpense = async () => {
+    if (!email) {
+      toast({ title: "Login required", description: "Please sign in", variant: "destructive" });
+      return;
     }
-    setScannedData(null);
-    toast({
-      title: "Expense Added",
-      description: "Scanned expense added to your tracker",
-    });
+    const parsedAmount = parseFloat(amount || "0");
+    if (!parsedAmount || !category || !description) {
+      toast({ title: "Missing info", description: "Enter amount, category, and description", variant: "destructive" });
+      return;
+    }
+    try {
+      await fetch("/api/expenses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          amount: parsedAmount,
+          category,
+          description,
+          date: (scannedData?.date) || new Date().toISOString().split("T")[0]
+        })
+      });
+      if (onExpenseAdded) {
+        onExpenseAdded({ amount: parsedAmount, category, description, date: scannedData?.date });
+      }
+      toast({ title: "Expense added", description: "Saved from bill" });
+      setScannedData(null);
+      setCategory("");
+      setAmount("");
+      setDescription("");
+    } catch (e: any) {
+      toast({ title: "Save error", description: String(e.message || e), variant: "destructive" });
+    }
   };
 
   const initiatePayment = () => {
@@ -129,60 +175,56 @@ export const ScanPayFeature = ({ onExpenseAdded }: ScanPayFeatureProps) => {
         </div>
       </Card>
 
-      {/* Quick Pay Section */}
-      <Card className="p-6 bg-gradient-to-br from-secondary/5 to-secondary/10">
-        <div className="text-center space-y-4">
-          <div className="inline-flex p-4 bg-secondary/20 rounded-full">
-            <CreditCard className="h-8 w-8 text-secondary" />
+      {/* Upload digital bill */}
+      <Card className="p-6">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="text-xl font-semibold">Upload Bill</h3>
+            <p className="text-muted-foreground text-sm">Upload any image or PDF of your bill</p>
           </div>
-          <h3 className="text-xl font-semibold">Quick Pay</h3>
-          <p className="text-muted-foreground">
-            Make payments and automatically track expenses
-          </p>
-          
-          <div className="flex gap-3 justify-center">
-            <Button
-              onClick={initiatePayment}
-              disabled={showPayment}
-              className="bg-secondary hover:bg-secondary/90"
-            >
-              <CreditCard className="h-4 w-4 mr-2" />
-              {showPayment ? "Processing..." : "Pay Now"}
-            </Button>
-            
-            <Button variant="outline">
-              <Smartphone className="h-4 w-4 mr-2" />
-              NFC Pay
-            </Button>
-          </div>
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isScanning}>
+            <Upload className="h-4 w-4 mr-2" />
+            {isScanning ? "Uploading..." : "Upload Bill"}
+          </Button>
+          <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileUpload} />
         </div>
       </Card>
 
-      {/* Scanned Receipt Dialog */}
+      {/* Scanned/Uploaded Bill Dialog with category selection */}
       <Dialog open={!!scannedData} onOpenChange={() => setScannedData(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirm Scanned Receipt</DialogTitle>
+            <DialogTitle>Confirm Bill Details</DialogTitle>
           </DialogHeader>
           
           {scannedData && (
             <div className="space-y-4">
               <div className="bg-muted/30 p-4 rounded-lg">
-                <h4 className="font-semibold text-lg">{scannedData.merchant}</h4>
-                <p className="text-muted-foreground">{scannedData.date}</p>
-                
-                <div className="mt-3 space-y-1">
-                  {scannedData.items.map((item: any, index: number) => (
-                    <div key={index} className="flex justify-between text-sm">
-                      <span>{item.name}</span>
-                      <span>${item.price.toFixed(2)}</span>
-                    </div>
-                  ))}
-                </div>
-                
-                <div className="border-t mt-3 pt-3 flex justify-between font-semibold">
-                  <span>Total</span>
-                  <span>${scannedData.amount.toFixed(2)}</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label>Amount</Label>
+                    <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" type="number" />
+                  </div>
+                  <div>
+                    <Label>Category</Label>
+                    <Select value={category} onValueChange={setCategory}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[
+                          "Food & Dining","Transportation","Shopping","Entertainment",
+                          "Bills & Utilities","Health & Fitness","Travel","Other"
+                        ].map((c) => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Label>Description</Label>
+                    <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="E.g. Merchant - Bill" />
+                  </div>
                 </div>
               </div>
               
@@ -198,24 +240,6 @@ export const ScanPayFeature = ({ onExpenseAdded }: ScanPayFeatureProps) => {
               </div>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Payment Processing Dialog */}
-      <Dialog open={showPayment} onOpenChange={setShowPayment}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Processing Payment</DialogTitle>
-          </DialogHeader>
-          
-          <div className="text-center py-8">
-            <div className="inline-flex p-4 bg-secondary/20 rounded-full animate-pulse">
-              <CreditCard className="h-8 w-8 text-secondary" />
-            </div>
-            <p className="mt-4 text-muted-foreground">
-              Please wait while we process your payment...
-            </p>
-          </div>
         </DialogContent>
       </Dialog>
     </div>
