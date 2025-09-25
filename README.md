@@ -1,4 +1,4 @@
-#Expense Tracker App – Description
+Expense Tracker App – Description
 
 The Expense Tracker App is a simple yet powerful tool designed to help users take control of their personal finances. It allows users to record daily expenses, categorize them, and analyze spending patterns in an organized way. With an intuitive interface and easy navigation, the app makes financial tracking effortless for everyone.
 
